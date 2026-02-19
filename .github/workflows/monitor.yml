@@ -1,4 +1,4 @@
-name: Pepsodent Monitor
+name: Monitor
 
 on:
   schedule:
