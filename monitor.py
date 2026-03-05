@@ -3,23 +3,21 @@ import json
 import os
 
 # ===== 설정 =====
-client_id = "k4d5tzosRsvc1fhHPbmL"
-client_secret = "AV7PkWkrIe"
+client_id = os.getenv("client_id")
+client_secret = os.getenv("client_secret")
 
 query = "펩소덴트"
 store_name = "공감 클릭"
 
-bot_token = "8512854707:AAFY-YfNuQk97Gl-NEn7M4lp5yxS9e9qx7k"
-chat_id = "8272697665"
+bot_token = os.getenv("bot_token")
+chat_id = os.getenv("chat_id")
 
 data_file = "sent_items.json"
 # =================
 
-
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     requests.post(url, data={"chat_id": chat_id, "text": msg})
-
 
 def load_sent():
     if os.path.exists(data_file):
@@ -27,11 +25,9 @@ def load_sent():
             return json.load(f)
     return []
 
-
 def save_sent(data):
     with open(data_file, "w") as f:
         json.dump(data, f)
-
 
 def check():
     url = "https://openapi.naver.com/v1/search/shop.json"
@@ -69,7 +65,6 @@ def check():
                 print("알림 전송:", title)
             else:
                 print("이미 알림 보냄:", title)
-
 
 if __name__ == "__main__":
     check()
