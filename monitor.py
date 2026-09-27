@@ -3,14 +3,14 @@ import json
 import os
 
 # ===== 설정 =====
-client_id = os.getenv("client_id")
-client_secret = os.getenv("client_secret")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
 
 query = "펩소덴트"
 store_name = "공감 클릭"
 
-bot_token = os.getenv("bot_token")
-chat_id = os.getenv("chat_id")
+bot_token = os.getenv("BOT_TOKEN")
+chat_id = os.getenv("CHAT_ID")
 
 data_file = "sent_items.json"
 # =================
@@ -46,6 +46,7 @@ def check():
     items = res.json().get("items", [])
 
     sent_list = load_sent()
+    has_new = False  # 추가: 새로운 상품 발견 여부 플래그
 
     for item in items:
         title = item["title"]
@@ -65,6 +66,10 @@ def check():
                 print("알림 전송:", title)
             else:
                 print("이미 알림 보냄:", title)
+
+    # 추가: 새로운 상품이 있을 때만 파일 저장
+    if has_new:
+        save_sent(sent_list)
 
 if __name__ == "__main__":
     check()
