@@ -46,7 +46,6 @@ def check():
     items = res.json().get("items", [])
 
     sent_list = load_sent()
-    has_new = False  # 추가: 새로운 상품 발견 여부 플래그
 
     for item in items:
         title = item["title"]
@@ -66,10 +65,6 @@ def check():
                 print("알림 전송:", title)
             else:
                 print("이미 알림 보냄:", title)
-
-    # 추가: 새로운 상품이 있을 때만 파일 저장
-    if has_new:
-        save_sent(sent_list)
 
 if __name__ == "__main__":
     check()
