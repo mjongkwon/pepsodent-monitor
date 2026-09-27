@@ -61,6 +61,9 @@ def check():
     )
 
     print("네이버 상태:", res.status_code)
+    print("네이버 응답:", res.text)
+
+    print("네이버 상태:", res.status_code)
 
     items = res.json().get("items", [])
 
