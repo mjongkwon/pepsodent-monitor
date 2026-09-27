@@ -2,14 +2,14 @@ import requests
 import os
 
 # ===== 설정 =====
-client_id = os.getenv("client_id")
-client_secret = os.getenv("client_secret")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
 
 query = "펩소덴트"
 store_name = "공감 클릭"
 
-bot_token = os.getenv("bot_token")
-chat_id = os.getenv("chat_id")
+bot_token = os.getenv("BOT_TOKEN")
+chat_id = os.getenv("CHAT_ID")
 
 # =================
 
