@@ -43,7 +43,15 @@ def check():
     }
 
     res = requests.get(url, headers=headers, params=params)
+
+    print("HTTP 상태:", res.status_code)
+    print("응답 내용:", res.text[:3000])
+
+    res.raise_for_status()
+
     items = res.json().get("items", [])
+
+    print("검색 결과 개수:", len(items))
 
     sent_list = load_sent()
 
@@ -52,9 +60,14 @@ def check():
         mall = item["mallName"]
         link = item["link"]
 
+        print("상품:", title)
+        print("판매몰:", mall)
+
         key = title + mall
 
         if query in title and store_name in mall:
+            print("조건 일치!")
+
             if key not in sent_list:
                 msg = f"📢 상품 등록 발견!\n{title}\n{link}"
                 send_telegram(msg)
@@ -65,6 +78,8 @@ def check():
                 print("알림 전송:", title)
             else:
                 print("이미 알림 보냄:", title)
+        else:
+            print("조건 불일치")
 
 if __name__ == "__main__":
     check()
