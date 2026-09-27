@@ -48,7 +48,7 @@ def save_sent(data):
 
 
 def check():
-    url = "https://openapi.naver.com/v1/search/shop.json"
+    url = "https://openapi.naver.com/v1/search/shop"
 
     headers = {
         "X-Naver-Client-Id": client_id,
