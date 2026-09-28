@@ -1,85 +1,60 @@
-name: Monitor
+name: Monitor1
 
 on:
   schedule:
-    - cron: "*/33 * * * *"   # 33분마다 실행
+    - cron: "*/33 * * * *"
+
   workflow_dispatch:
 
+# 🔴 seen_products.json을 GitHub에 저장하기 위해 필요
+permissions:
+  contents: write
+
 jobs:
+
   run:
+
     runs-on: ubuntu-latest
 
     steps:
 
-      # ============================================
-      # 1. GitHub 저장소 가져오기
-      # ============================================
-
       - name: Checkout
-        uses: actions/checkout@v6
-
-      # ============================================
-      # 2. Python 설치
-      # ============================================
+        uses: actions/checkout@v5
 
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
-      # ============================================
-      # 3. Python 패키지 설치
-      # ============================================
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ============================================
-      # 4. Playwright Chromium 설치
-      # ============================================
-
-      # 🔴 매우 중요
-      # 이 부분이 있어야 GitHub Actions에서
-      # Chromium 브라우저를 실행할 수 있습니다.
-
-      - name: Install Playwright Chromium
-        run: python -m playwright install --with-deps chromium
-
-      # ============================================
-      # 5. 모니터링 실행
-      # ============================================
-
-      - name: Run script
+      - name: Run monitor
         run: python monitor1.py
         env:
-          # 🔴 GitHub Secrets
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-
-      # ============================================
-      # 6. 변경된 seen_products.json 저장
-      # ============================================
-
-      # 🔴 매우 중요
-      #
-      # GitHub Actions가 끝나면 runner가 없어집니다.
-      # 따라서 중복 알림 기록을 GitHub 저장소에
-      # 다시 저장해야 다음 실행에서도 기억할 수 있습니다.
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
 
       - name: Save seen products
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # seen_products.json이 있을 때만 Git에 저장
           if [ -f seen_products.json ]; then
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
             git add seen_products.json
 
             git diff --cached --quiet || git commit -m "Update seen products"
 
             git push
+
           else
-            echo "seen_products.json 파일이 아직 없습니다. 저장할 내용이 없습니다."
+
+            echo "seen_products.json이 없습니다."
+
           fi
