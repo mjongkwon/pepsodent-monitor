@@ -1,4 +1,3 @@
-```yaml
 name: Monitor
 
 on:
@@ -28,4 +27,3 @@ jobs:
           # 🔴 GitHub Secrets 이름과 monitor.py 이름을 동일하게 사용
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-```
