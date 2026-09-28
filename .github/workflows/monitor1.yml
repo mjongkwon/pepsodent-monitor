@@ -1,4 +1,4 @@
-name: Monitor
+name: Monitor1
 
 on:
   schedule:
