@@ -1,0 +1,258 @@
+```python
+import requests
+import os
+import json
+import re
+import html
+from urllib.parse import quote
+
+# =========================================================
+# 설정
+# =========================================================
+
+QUERY = "펩소덴트"
+STORE_NAME = "공감 클릭"
+
+# 🔴 GitHub Secrets와 이름을 맞춥니다.
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+
+# =========================================================
+# 네이버 쇼핑 검색
+# =========================================================
+
+def search_naver_shopping():
+
+    # 🔴 기존 Open API가 아닙니다.
+    # 기존:
+    # https://openapi.naver.com/v1/search/shop.json
+    #
+    # 현재는 네이버 쇼핑 웹 검색 페이지를 사용합니다.
+
+    url = (
+        "https://search.shopping.naver.com/search/all"
+        f"?query={quote(QUERY)}"
+    )
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/153.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+
+    print("네이버 쇼핑 검색:")
+    print(url)
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=20
+        )
+
+        print("네이버 HTTP 상태:", response.status_code)
+
+        if response.status_code != 200:
+            print("❌ 네이버 쇼핑 페이지 접속 실패")
+            print(response.text[:500])
+            return []
+
+        text = response.text
+
+        print("페이지 크기:", len(text))
+
+        return extract_products(text)
+
+    except Exception as e:
+        print("❌ 네이버 검색 오류:", e)
+        return []
+
+
+# =========================================================
+# 상품 정보 추출
+# =========================================================
+
+def extract_products(text):
+
+    products = []
+
+    # -----------------------------------------------------
+    # 방법 1
+    # 네이버 페이지의 JSON 데이터에서 상품 정보 찾기
+    # -----------------------------------------------------
+
+    # productTitle / mallName / productId 등이 포함된
+    # JSON 영역을 찾습니다.
+
+    title_matches = re.findall(
+        r'"productTitle"\s*:\s*"([^"]+)"',
+        text
+    )
+
+    mall_matches = re.findall(
+        r'"mallName"\s*:\s*"([^"]+)"',
+        text
+    )
+
+    product_id_matches = re.findall(
+        r'"productId"\s*:\s*"([^"]+)"',
+        text
+    )
+
+    print("찾은 상품명:", len(title_matches))
+    print("찾은 판매처:", len(mall_matches))
+    print("찾은 상품번호:", len(product_id_matches))
+
+    # -----------------------------------------------------
+    # 상품명 기준으로 우선 상품을 만듭니다.
+    # -----------------------------------------------------
+
+    for i, title in enumerate(title_matches):
+
+        title = html.unescape(title)
+
+        # HTML 태그 제거
+        title = re.sub(r"<[^>]+>", "", title)
+
+        mall = ""
+
+        if i < len(mall_matches):
+            mall = html.unescape(mall_matches[i])
+
+        product_id = ""
+
+        if i < len(product_id_matches):
+            product_id = product_id_matches[i]
+
+        # -------------------------------------------------
+        # 🔴 핵심 조건
+        #
+        # 상품명에 "펩소덴트"가 있어야 합니다.
+        # -------------------------------------------------
+
+        if QUERY not in title:
+            continue
+
+        # -------------------------------------------------
+        # 🔴 판매처 확인
+        #
+        # "공감 클릭"이 포함된 경우만 알림
+        # -------------------------------------------------
+
+        if STORE_NAME not in mall:
+            continue
+
+        # 상품 URL
+        link = ""
+
+        if product_id:
+            link = (
+                "https://smartstore.naver.com/main/products/"
+                + product_id
+            )
+
+        products.append({
+            "title": title,
+            "mall": mall,
+            "product_id": product_id,
+            "link": link
+        })
+
+    return products
+
+
+# =========================================================
+# Telegram
+# =========================================================
+
+def send_telegram(message):
+
+    # 🔴 Telegram Secret 확인
+    if not BOT_TOKEN:
+        print("❌ BOT_TOKEN이 없습니다.")
+        return False
+
+    if not CHAT_ID:
+        print("❌ CHAT_ID가 없습니다.")
+        return False
+
+    url = (
+        f"https://api.telegram.org/bot"
+        f"{BOT_TOKEN}/sendMessage"
+    )
+
+    try:
+
+        response = requests.post(
+            url,
+            data={
+                "chat_id": CHAT_ID,
+                "text": message
+            },
+            timeout=20
+        )
+
+        print("Telegram 상태:", response.status_code)
+        print("Telegram 응답:", response.text)
+
+        if response.status_code == 200:
+            print("✅ Telegram 전송 성공")
+            return True
+
+        print("❌ Telegram 전송 실패")
+        return False
+
+    except Exception as e:
+
+        print("❌ Telegram 오류:", e)
+        return False
+
+
+# =========================================================
+# 실행
+# =========================================================
+
+def check():
+
+    print("===================================")
+    print("🔍 네이버 쇼핑 모니터링 시작")
+    print("검색어:", QUERY)
+    print("판매처:", STORE_NAME)
+    print("===================================")
+
+    products = search_naver_shopping()
+
+    print("조건에 맞는 상품:", len(products))
+
+    if not products:
+        print("현재 조건에 맞는 상품이 없습니다.")
+        return
+
+    # -----------------------------------------------------
+    # 발견된 상품을 Telegram으로 전송
+    # -----------------------------------------------------
+
+    for product in products:
+
+        message = (
+            "📢 상품 등록 발견!\n\n"
+            f"상품명: {product['title']}\n"
+            f"판매처: {product['mall']}\n"
+            f"상품번호: {product['product_id']}\n"
+            f"상품 URL: {product['link']}"
+        )
+
+        print("-----------------------------------")
+        print(message)
+        print("-----------------------------------")
+
+        send_telegram(message)
+
+
+if __name__ == "__main__":
+    check()
+```
