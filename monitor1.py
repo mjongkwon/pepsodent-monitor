@@ -1,4 +1,3 @@
-```python
 import requests
 import os
 import json
@@ -255,4 +254,3 @@ def check():
 
 if __name__ == "__main__":
     check()
-```
