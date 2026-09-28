@@ -1,23 +1,23 @@
+import requests
 import os
 import re
 import json
-import requests
-
-from playwright.sync_api import sync_playwright
 
 
 # =========================================================
-# 설정
+# 🔴 여기만 확인하세요
 # =========================================================
 
 QUERY = "펩소덴트"
 STORE_NAME = "공감 클릭"
 
-# 🔴 GitHub Secrets
+# GitHub Secrets
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# 🔴 중복 알림 기록 파일
 SEEN_FILE = "seen_products.json"
 
 
@@ -27,43 +27,24 @@ SEEN_FILE = "seen_products.json"
 
 def send_telegram(message):
 
-    if not BOT_TOKEN:
-        print("❌ BOT_TOKEN이 없습니다.")
-        return False
-
-    if not CHAT_ID:
-        print("❌ CHAT_ID가 없습니다.")
-        return False
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    try:
-        response = requests.post(
-            url,
-            data={
-                "chat_id": CHAT_ID,
-                "text": message
-            },
-            timeout=20
-        )
+    response = requests.post(
+        url,
+        data={
+            "chat_id": CHAT_ID,
+            "text": message
+        },
+        timeout=30
+    )
 
-        print("Telegram 상태:", response.status_code)
-        print("Telegram 응답:", response.text)
+    print("Telegram 상태:", response.status_code)
 
-        if response.status_code == 200:
-            print("✅ Telegram 전송 성공")
-            return True
-
-        print("❌ Telegram 전송 실패")
-        return False
-
-    except Exception as e:
-        print("❌ Telegram 오류:", e)
-        return False
+    return response.ok
 
 
 # =========================================================
-# 중복 알림 기록 읽기
+# 기존에 알림 보낸 상품
 # =========================================================
 
 def load_seen_products():
@@ -73,35 +54,21 @@ def load_seen_products():
 
     try:
         with open(SEEN_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            return set(json.load(f))
 
-        return set(data)
-
-    except Exception as e:
-        print("⚠️ 중복 기록 읽기 실패:", e)
+    except Exception:
         return set()
 
 
-# =========================================================
-# 중복 알림 기록 저장
-# =========================================================
+def save_seen_products(seen):
 
-def save_seen_products(seen_products):
-
-    try:
-
-        with open(SEEN_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                sorted(list(seen_products)),
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-
-        print("✅ 중복 기록 저장 완료")
-
-    except Exception as e:
-        print("❌ 중복 기록 저장 실패:", e)
+    with open(SEEN_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            sorted(seen),
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
 
 
 # =========================================================
@@ -110,257 +77,109 @@ def save_seen_products(seen_products):
 
 def get_product_id(url):
 
-    # 예:
-    # https://smartstore.naver.com/xxx/products/8272697665
+    if not url:
+        return None
 
+    # Smartstore 상품번호
     match = re.search(r"/products/(\d+)", url)
 
     if match:
         return match.group(1)
 
-    return ""
+    return None
 
 
 # =========================================================
-# 네이버 쇼핑 검색
+# 네이버 일반 검색 API
 # =========================================================
 
-def search_naver_shopping():
+def search_naver():
 
-    search_url = (
-        "https://search.shopping.naver.com/search/all"
-        f"?query={QUERY}"
+    url = "https://openapi.naver.com/v1/search/webkr.json"
+
+    headers = {
+        "X-Naver-Client-Id": CLIENT_ID,
+        "X-Naver-Client-Secret": CLIENT_SECRET
+    }
+
+    # 🔴 검색어
+    search_query = f"{QUERY} {STORE_NAME}"
+
+    params = {
+        "query": search_query,
+        "display": 100,
+        "start": 1,
+        "sort": "date"
+    }
+
+    print()
+    print("🌐 네이버 일반 검색 API")
+    print("검색어:", search_query)
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=30
     )
 
-    print("===================================")
-    print("🔍 네이버 쇼핑 모니터링 시작")
-    print("검색어:", QUERY)
-    print("판매처:", STORE_NAME)
-    print("===================================")
+    print("네이버 HTTP 상태:", response.status_code)
 
-    print("네이버 쇼핑 주소:")
-    print(search_url)
+    if response.status_code != 200:
+
+        print("❌ 네이버 API 오류")
+        print(response.text)
+
+        return []
+
+    data = response.json()
+
+    items = data.get("items", [])
+
+    print("검색 결과:", len(items))
 
     products = []
 
-    with sync_playwright() as p:
+    for item in items:
 
-        # 🔴 Chromium 실행
-        browser = p.chromium.launch(
-            headless=True
-        )
+        title = item.get("title", "")
+        link = item.get("link", "")
+        description = item.get("description", "")
 
-        context = browser.new_context(
-            locale="ko-KR",
-            viewport={
-                "width": 1440,
-                "height": 1000
-            },
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            )
-        )
+        # HTML 태그 제거
+        title = re.sub(r"<.*?>", "", title)
+        description = re.sub(r"<.*?>", "", description)
 
-        page = context.new_page()
+        text = title + " " + description
 
-        try:
+        # -------------------------------------------------
+        # 펩소덴트가 포함되어 있어야 함
+        # -------------------------------------------------
 
-            print("🌐 네이버 쇼핑 접속 중...")
+        if QUERY not in text:
+            continue
 
-            response = page.goto(
-                search_url,
-                wait_until="domcontentloaded",
-                timeout=30000
-            )
+        # -------------------------------------------------
+        # 공감 클릭이 포함되어 있어야 함
+        # -------------------------------------------------
 
-            if response:
-                print(
-                    "네이버 HTTP 상태:",
-                    response.status
-                )
+        if STORE_NAME not in text:
+            continue
 
-            # 🔴 페이지가 상품을 로딩할 시간을 줍니다.
-            page.wait_for_timeout(5000)
+        # -------------------------------------------------
+        # 상품번호 추출
+        # -------------------------------------------------
 
-            print("현재 페이지:", page.url)
-            print("페이지 제목:", page.title())
+        product_id = get_product_id(link)
 
-            # -------------------------------------------------
-            # 차단 여부 확인
-            # -------------------------------------------------
+        if not product_id:
+            continue
 
-            body_text = page.locator("body").inner_text(
-                timeout=10000
-            )
-
-            if "접근이 제한" in body_text:
-                print("❌ 네이버에서 접근을 제한했습니다.")
-                return []
-
-            if "자동화" in body_text and "차단" in body_text:
-                print("❌ 자동화 접근이 차단된 것으로 보입니다.")
-                return []
-
-            # -------------------------------------------------
-            # 상품 링크 찾기
-            # -------------------------------------------------
-
-            links = page.locator(
-                'a[href*="/products/"]'
-            )
-
-            count = links.count()
-
-            print("상품 링크 발견:", count)
-
-            # 같은 상품이 여러 번 나타나는 것을 방지
-            found_ids = set()
-
-            for i in range(count):
-
-                try:
-
-                    link_element = links.nth(i)
-
-                    href = link_element.get_attribute(
-                        "href"
-                    )
-
-                    if not href:
-                        continue
-
-                    # 상대주소 처리
-                    if href.startswith("/"):
-                        href = "https://smartstore.naver.com" + href
-
-                    product_id = get_product_id(href)
-
-                    if not product_id:
-                        continue
-
-                    # 이미 같은 상품을 처리했다면 건너뜀
-                    if product_id in found_ids:
-                        continue
-
-                    found_ids.add(product_id)
-
-                    # -------------------------------------------------
-                    # 상품명
-                    # -------------------------------------------------
-
-                    title = link_element.inner_text().strip()
-
-                    # 링크 자체에 상품명이 없는 경우
-                    # 부모 영역의 텍스트를 가져옵니다.
-                    if not title:
-
-                        try:
-                            parent = link_element.locator(
-                                "xpath=.."
-                            )
-
-                            title = parent.inner_text().strip()
-
-                        except:
-                            title = ""
-
-                    # -------------------------------------------------
-                    # 주변 영역의 전체 텍스트
-                    # 판매처 이름 확인용
-                    # -------------------------------------------------
-
-                    surrounding_text = ""
-
-                    try:
-
-                        # 몇 단계 위의 상품 영역을 확인
-                        ancestor = link_element.locator(
-                            "xpath=../../.."
-                        )
-
-                        surrounding_text = (
-                            ancestor.inner_text()
-                        )
-
-                    except:
-                        surrounding_text = ""
-
-                    # -------------------------------------------------
-                    # 검색어 확인
-                    # -------------------------------------------------
-
-                    if QUERY not in title and QUERY not in surrounding_text:
-                        continue
-
-                    # -------------------------------------------------
-                    # 판매처 확인
-                    # -------------------------------------------------
-
-                    if STORE_NAME not in surrounding_text:
-
-                        print(
-                            "판매처 불일치:",
-                            product_id,
-                            title[:80]
-                        )
-
-                        continue
-
-                    # -------------------------------------------------
-                    # 상품 발견
-                    # -------------------------------------------------
-
-                    print("-----------------------------------")
-                    print("🎉 상품 발견!")
-                    print("상품명:", title)
-                    print("판매처:", STORE_NAME)
-                    print("상품번호:", product_id)
-                    print("URL:", href)
-                    print("-----------------------------------")
-
-                    products.append({
-                        "product_id": product_id,
-                        "title": title,
-                        "mall": STORE_NAME,
-                        "link": href
-                    })
-
-                except Exception as e:
-
-                    print(
-                        "⚠️ 상품 하나 처리 중 오류:",
-                        e
-                    )
-
-            print(
-                "조건에 맞는 상품:",
-                len(products)
-            )
-
-        except Exception as e:
-
-            print("❌ 네이버 검색 오류:", e)
-
-            # 디버깅용 스크린샷
-            try:
-                page.screenshot(
-                    path="naver_error.png",
-                    full_page=True
-                )
-
-                print(
-                    "📸 nav er_error.png 저장"
-                )
-
-            except:
-                pass
-
-        finally:
-
-            browser.close()
+        products.append({
+            "id": product_id,
+            "title": title,
+            "url": link
+        })
 
     return products
 
@@ -371,94 +190,70 @@ def search_naver_shopping():
 
 def check():
 
-    seen_products = load_seen_products()
+    seen = load_seen_products()
 
-    print(
-        "기존 알림 상품:",
-        len(seen_products)
-    )
+    print()
+    print("기존 알림 상품:", len(seen))
 
-    products = search_naver_shopping()
+    print()
+    print("===================================")
+    print("🔍 네이버 상품 모니터링 시작")
+    print("검색어:", QUERY)
+    print("판매처:", STORE_NAME)
+    print("===================================")
 
-    if not products:
+    products = search_naver()
 
-        print(
-            "현재 조건에 맞는 새 상품이 없습니다."
-        )
+    print()
+    print("조건에 맞는 상품:", len(products))
 
-        return
-
-    new_products = 0
+    new_products = []
 
     for product in products:
 
-        product_id = product["product_id"]
+        product_id = product["id"]
 
-        # -------------------------------------------------
-        # 🔴 이미 Telegram을 보낸 상품이면 건너뜁니다.
-        # -------------------------------------------------
-
-        if product_id in seen_products:
-
-            print(
-                "⏭️ 이미 알림한 상품:",
-                product_id
-            )
-
+        if product_id in seen:
             continue
 
+        new_products.append(product)
+
+    # -----------------------------------------------------
+    # 새 상품 발견
+    # -----------------------------------------------------
+
+    for product in new_products:
+
         message = (
-            "📢 상품 등록 발견!\n\n"
+            "📢 새로운 상품 발견!\n\n"
             f"상품명: {product['title']}\n"
-            f"판매처: {product['mall']}\n"
-            f"상품번호: {product['product_id']}\n"
-            f"상품 URL: {product['link']}"
+            f"상품번호: {product['id']}\n"
+            f"상품주소: {product['url']}"
         )
 
-        print("📨 Telegram 전송:")
-        print(message)
-
-        # -------------------------------------------------
-        # Telegram 전송 성공했을 때만
-        # 중복 기록에 저장합니다.
-        # -------------------------------------------------
+        print()
+        print("📢 새 상품:", product["title"])
+        print("상품번호:", product["id"])
+        print("URL:", product["url"])
 
         success = send_telegram(message)
 
         if success:
-
-            seen_products.add(product_id)
-
-            new_products += 1
-
-            print(
-                "✅ 새 상품 알림 완료:",
-                product_id
-            )
-
-        else:
-
-            print(
-                "❌ Telegram 실패 - "
-                "중복 기록에 저장하지 않음"
-            )
+            seen.add(product["id"])
 
     # -----------------------------------------------------
-    # 중복 기록 저장
+    # 저장
     # -----------------------------------------------------
 
-    save_seen_products(seen_products)
+    save_seen_products(seen)
 
-    print(
-        "새로 알림한 상품:",
-        new_products
-    )
+    if new_products:
+        print()
+        print("새 상품:", len(new_products))
+    else:
+        print()
+        print("현재 조건에 맞는 새 상품이 없습니다.")
 
-
-# =========================================================
-# 실행
-# =========================================================
 
 if __name__ == "__main__":
     check()
-
