@@ -22,7 +22,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run script
-        run: python monitor.py
+        run: python monitor1.py
         env:
           # 🔴 GitHub Secrets 이름과 monitor.py 이름을 동일하게 사용
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
