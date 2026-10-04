@@ -146,6 +146,12 @@ def search_naver():
         link = item.get("link", "")
         description = item.get("description", "")
 
+                print()
+        print("----- 검색 결과 -----")
+        print("제목:", title)
+        print("URL:", link)
+        print("설명:", description)
+
         # HTML 태그 제거
         title = re.sub(r"<.*?>", "", title)
         description = re.sub(r"<.*?>", "", description)
