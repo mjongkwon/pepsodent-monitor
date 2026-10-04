@@ -146,7 +146,7 @@ def search_naver():
         link = item.get("link", "")
         description = item.get("description", "")
 
-                print()
+        print()
         print("----- 검색 결과 -----")
         print("제목:", title)
         print("URL:", link)
