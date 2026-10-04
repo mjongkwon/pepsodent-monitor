@@ -90,8 +90,9 @@ def search_naver():
 
     print("Apify HTTP 상태:", response.status_code)
 
-    if response.status_code != 200:
-
+    # 200뿐 아니라 201 등 모든 2xx를 정상 처리
+    if not response.ok:
+        
         print("❌ Apify 오류")
         print(response.text[:5000])
 
@@ -144,7 +145,7 @@ def check():
         # 펩소덴트 + 공감 클릭
         # -------------------------------------------------
 
-        if KEYWORD in title and STORE_NAME in store_name:
+        if KEYWORD in title and STORE_NAME.strip() in store_name:
 
             found.append({
                 "title": title,
