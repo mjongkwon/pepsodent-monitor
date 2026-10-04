@@ -2,18 +2,13 @@ import requests
 import os
 import re
 
-
 # =========================================================
-# 🔴 설정
+# 설정
 # =========================================================
 
-# 모니터링할 SmartStore
-STORE_ID = "smart_how"
-
-# 찾을 상품명
 KEYWORD = "펩소덴트"
+STORE_NAME = "공감 클릭"
 
-# GitHub Secrets
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
@@ -42,12 +37,9 @@ def send_telegram(message):
 
     if response.ok:
         print("✅ Telegram 알림 전송 성공")
-        return True
-
-    print("❌ Telegram 알림 전송 실패")
-    print(response.text)
-
-    return False
+    else:
+        print("❌ Telegram 알림 전송 실패")
+        print(response.text)
 
 
 # =========================================================
@@ -63,11 +55,8 @@ def search_naver():
         "X-Naver-Client-Secret": CLIENT_SECRET
     }
 
-    # 🔴 핵심 검색어
-    #
-    # SmartStore의 특정 스토어 안에서
-    # 펩소덴트를 찾도록 검색
-    search_query = f"site:smartstore.naver.com/{STORE_ID} {KEYWORD}"
+    # 공감 클릭 + 펩소덴트 검색
+    search_query = f'"{STORE_NAME}" "{KEYWORD}"'
 
     params = {
         "query": search_query,
@@ -89,10 +78,8 @@ def search_naver():
     print("네이버 HTTP 상태:", response.status_code)
 
     if response.status_code != 200:
-
         print("❌ 네이버 API 오류")
         print(response.text)
-
         return []
 
     data = response.json()
@@ -105,7 +92,7 @@ def search_naver():
 
 
 # =========================================================
-# 상품 검색
+# 공감 클릭 + 펩소덴트 확인
 # =========================================================
 
 def check():
@@ -113,19 +100,19 @@ def check():
     print()
     print("===================================")
     print("🔍 공감 클릭 SmartStore 모니터링")
-    print("스토어 ID:", STORE_ID)
     print("검색어:", KEYWORD)
+    print("확인 대상:", STORE_NAME)
     print("===================================")
 
     items = search_naver()
 
-    found_products = []
+    found = False
 
     for item in items:
 
         title = item.get("title", "")
-        link = item.get("link", "")
         description = item.get("description", "")
+        link = item.get("link", "")
 
         # HTML 태그 제거
         title = re.sub(r"<.*?>", "", title)
@@ -137,33 +124,26 @@ def check():
         print("URL:", link)
         print("설명:", description)
 
-        # -------------------------------------------------
-        # SmartStore 주소인지 확인
-        # -------------------------------------------------
-
-        if f"smartstore.naver.com/{STORE_ID}" not in link:
-            continue
-
-        # -------------------------------------------------
-        # 펩소덴트가 제목 또는 설명에 있는지 확인
-        # -------------------------------------------------
-
+        # 제목 + 설명을 합쳐서 확인
         text = f"{title} {description}"
 
-        if KEYWORD not in text:
-            continue
+        # 공감 클릭 + 펩소덴트가 모두 있는지 확인
+        if STORE_NAME in text and KEYWORD in text:
 
-        # -------------------------------------------------
-        # 상품 URL인지 확인
-        # -------------------------------------------------
+            found = True
 
-        if "/products/" not in link:
-            continue
+            print()
+            print("🎯 공감 클릭 + 펩소덴트 발견!")
 
-        found_products.append({
-            "title": title,
-            "url": link
-        })
+            message = (
+                "📢 펩소덴트 검색 결과 발견!\n\n"
+                f"스토어: {STORE_NAME}\n"
+                f"검색어: {KEYWORD}\n\n"
+                f"제목: {title}\n"
+                f"URL: {link}"
+            )
+
+            send_telegram(message)
 
     # =====================================================
     # 결과
@@ -171,41 +151,14 @@ def check():
 
     print()
     print("===================================")
-    print("조건에 맞는 상품:", len(found_products))
+
+    if found:
+        print("🎯 조건에 맞는 검색 결과를 발견했습니다.")
+    else:
+        print("현재 '공감 클릭 + 펩소덴트' 검색 결과가 없습니다.")
+
     print("===================================")
 
-    if not found_products:
-
-        print("현재 펩소덴트 상품이 검색되지 않았습니다.")
-        return
-
-    # =====================================================
-    # Telegram 알림
-    #
-    # 🔴 중복 검사 없음
-    # 🔴 저장 없음
-    # 🔴 매번 발견하면 알림
-    # =====================================================
-
-    for product in found_products:
-
-        message = (
-            "📢 펩소덴트 상품 발견!\n\n"
-            f"상품명: {product['title']}\n\n"
-            f"상품 URL:\n{product['url']}"
-        )
-
-        print()
-        print("📢 Telegram 알림:")
-        print(product["title"])
-        print(product["url"])
-
-        send_telegram(message)
-
-
-# =========================================================
-# 실행
-# =========================================================
 
 if __name__ == "__main__":
     check()
