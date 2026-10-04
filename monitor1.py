@@ -1,6 +1,6 @@
 import requests
 import os
-import re
+import json
 
 # =========================================================
 # 설정
@@ -9,15 +9,12 @@ import re
 KEYWORD = "펩소덴트"
 STORE_NAME = "공감 클릭"
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 
 # =========================================================
-# Telegram 알림
+# Telegram
 # =========================================================
 
 def send_telegram(message):
@@ -43,56 +40,106 @@ def send_telegram(message):
 
 
 # =========================================================
-# 네이버 웹문서 검색
+# 네이버플러스 스토어 검색
 # =========================================================
 
-def search_naver():
+def search_naver_plus_store():
 
-    url = "https://openapi.naver.com/v1/search/webkr.json"
-
-    headers = {
-        "X-Naver-Client-Id": CLIENT_ID,
-        "X-Naver-Client-Secret": CLIENT_SECRET
-    }
-
-    # 공감 클릭 + 펩소덴트 검색
-    search_query = f'"{STORE_NAME}" "{KEYWORD}"'
+    url = "https://ns-portal.shopping.naver.com/api/v2/shopping-paged-slot"
 
     params = {
-        "query": search_query,
-        "display": 100,
-        "start": 1
+        "query": KEYWORD,
+        "source": "shp_gui"
+    }
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 "
+            "(KHTML, like Gecko) "
+            "Chrome/130.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Referer": "https://search.shopping.naver.com/ns/search"
     }
 
     print()
-    print("🌐 네이버 웹문서 검색 API")
-    print("검색어:", search_query)
+    print("🌐 네이버플러스 스토어 검색")
+    print("검색어:", KEYWORD)
+    print("요청 URL:", url)
 
     response = requests.get(
         url,
-        headers=headers,
         params=params,
+        headers=headers,
         timeout=30
     )
 
     print("네이버 HTTP 상태:", response.status_code)
 
     if response.status_code != 200:
-        print("❌ 네이버 API 오류")
-        print(response.text)
-        return []
 
-    data = response.json()
+        print("❌ 네이버 검색 요청 실패")
+        print(response.text[:2000])
 
-    items = data.get("items", [])
+        return None
 
-    print("검색 결과:", len(items))
+    print("응답 크기:", len(response.text))
 
-    return items
+    return response.json()
 
 
 # =========================================================
-# 공감 클릭 + 펩소덴트 확인
+# 데이터에서 문자열 찾기
+# =========================================================
+
+def find_store(data):
+
+    found = []
+
+    def scan(obj):
+
+        if isinstance(obj, dict):
+
+            # 상품 데이터에서 흔히 사용되는 필드들을 확인
+            title = str(
+                obj.get("title", "")
+                or obj.get("productName", "")
+                or obj.get("name", "")
+            )
+
+            mall = str(
+                obj.get("mallName", "")
+                or obj.get("storeName", "")
+                or obj.get("sellerName", "")
+                or obj.get("mall", "")
+            )
+
+            # 펩소덴트 + 공감 클릭
+            if KEYWORD in title and STORE_NAME in mall:
+
+                found.append({
+                    "title": title,
+                    "mall": mall,
+                    "data": obj
+                })
+
+            for value in obj.values():
+                scan(value)
+
+        elif isinstance(obj, list):
+
+            for item in obj:
+                scan(item)
+
+    scan(data)
+
+    return found
+
+
+# =========================================================
+# 메인
 # =========================================================
 
 def check():
@@ -101,63 +148,55 @@ def check():
     print("===================================")
     print("🔍 공감 클릭 SmartStore 모니터링")
     print("검색어:", KEYWORD)
-    print("확인 대상:", STORE_NAME)
+    print("확인 스토어:", STORE_NAME)
     print("===================================")
 
-    items = search_naver()
+    data = search_naver_plus_store()
 
-    found = False
+    if data is None:
+        return
 
-    for item in items:
+    print()
+    print("🔎 네이버플러스 스토어 응답 분석 중...")
 
-        title = item.get("title", "")
-        description = item.get("description", "")
-        link = item.get("link", "")
-
-        # HTML 태그 제거
-        title = re.sub(r"<.*?>", "", title)
-        description = re.sub(r"<.*?>", "", description)
-
-        print()
-        print("----- 검색 결과 -----")
-        print("제목:", title)
-        print("URL:", link)
-        print("설명:", description)
-
-        # 제목 + 설명을 합쳐서 확인
-        text = f"{title} {description}"
-
-        # 공감 클릭 + 펩소덴트가 모두 있는지 확인
-        if STORE_NAME in text and KEYWORD in text:
-
-            found = True
-
-            print()
-            print("🎯 공감 클릭 + 펩소덴트 발견!")
-
-            message = (
-                "📢 펩소덴트 검색 결과 발견!\n\n"
-                f"스토어: {STORE_NAME}\n"
-                f"검색어: {KEYWORD}\n\n"
-                f"제목: {title}\n"
-                f"URL: {link}"
-            )
-
-            send_telegram(message)
-
-    # =====================================================
-    # 결과
-    # =====================================================
+    found = find_store(data)
 
     print()
     print("===================================")
-
-    if found:
-        print("🎯 조건에 맞는 검색 결과를 발견했습니다.")
-    else:
-        print("현재 '공감 클릭 + 펩소덴트' 검색 결과가 없습니다.")
-
+    print("조건에 맞는 상품:", len(found))
     print("===================================")
+
+    if not found:
+
+        print("현재 공감 클릭에서 펩소덴트 상품을 찾지 못했습니다.")
+
+        # 테스트를 위해 응답 구조의 일부를 출력
+        print()
+        print("----- 응답 구조 확인용 -----")
+        print(json.dumps(data, ensure_ascii=False)[:5000])
+
+        return
+
+    # =====================================================
+    # 발견
+    # =====================================================
+
+    for product in found:
+
+        title = product["title"]
+
+        print()
+        print("🎯 펩소덴트 상품 발견!")
+        print("상품명:", title)
+        print("스토어:", product["mall"])
+
+        message = (
+            "📢 펩소덴트 상품 발견!\n\n"
+            f"스토어: {STORE_NAME}\n"
+            f"상품명: {title}"
+        )
+
+        send_telegram(message)
 
 
 if __name__ == "__main__":
