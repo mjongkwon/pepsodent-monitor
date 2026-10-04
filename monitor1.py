@@ -1,6 +1,6 @@
 import os
 import requests
-from playwright.sync_api import sync_playwright
+
 
 # =========================================================
 # 설정
@@ -9,12 +9,18 @@ from playwright.sync_api import sync_playwright
 KEYWORD = "펩소덴트"
 STORE_NAME = "공감 클릭"
 
+APIFY_TOKEN = os.getenv("APIFY_TOKEN")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-SEARCH_URL = (
-    "https://search.shopping.naver.com/ns/search"
-    "?query=펩소덴트"
+
+# Apify Actor
+ACTOR_ID = "silentflow~naver-scraper"
+
+APIFY_URL = (
+    f"https://api.apify.com/v2/actors/"
+    f"{ACTOR_ID}/run-sync-get-dataset-items"
 )
 
 
@@ -39,13 +45,75 @@ def send_telegram(message):
 
     if response.ok:
         print("✅ Telegram 알림 전송 성공")
-    else:
-        print("❌ Telegram 알림 전송 실패")
-        print(response.text)
+        return True
+
+    print("❌ Telegram 알림 전송 실패")
+    print(response.text)
+
+    return False
 
 
 # =========================================================
-# 네이버플러스 스토어 검색
+# Apify → Naver Shopping 검색
+# =========================================================
+
+def search_naver():
+
+    print()
+    print("===================================")
+    print("🌐 Apify Naver Shopping 검색")
+    print("검색어:", KEYWORD)
+    print("===================================")
+
+    headers = {
+        "Authorization": f"Bearer {APIFY_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    # 하루 한 번 검색하는 것이므로
+    # 필요한 정도의 상품만 가져옵니다.
+    payload = {
+        "keywords": [
+            KEYWORD
+        ],
+        "maxItems": 90,
+        "includeDetails": False,
+        "maxReviews": 0
+    }
+
+    response = requests.post(
+        APIFY_URL,
+        headers=headers,
+        json=payload,
+        timeout=300
+    )
+
+    print("Apify HTTP 상태:", response.status_code)
+
+    if response.status_code != 200:
+
+        print("❌ Apify 오류")
+        print(response.text[:5000])
+
+        return []
+
+    try:
+        items = response.json()
+
+    except Exception as e:
+
+        print("❌ JSON 변환 실패")
+        print(str(e))
+
+        return []
+
+    print("검색 결과:", len(items))
+
+    return items
+
+
+# =========================================================
+# 공감 클릭 + 펩소덴트 확인
 # =========================================================
 
 def check():
@@ -57,100 +125,75 @@ def check():
     print("확인 스토어:", STORE_NAME)
     print("===================================")
 
-    with sync_playwright() as p:
+    items = search_naver()
 
-        browser = p.chromium.launch(
-            headless=True
+    found = []
+
+    for item in items:
+
+        title = str(item.get("title", ""))
+        store_name = str(item.get("storeName", ""))
+        store_url = str(item.get("storeUrl", ""))
+
+        print()
+        print("----- 상품 -----")
+        print("상품명:", title)
+        print("스토어:", store_name)
+
+        # -------------------------------------------------
+        # 펩소덴트 + 공감 클릭
+        # -------------------------------------------------
+
+        if KEYWORD in title and STORE_NAME in store_name:
+
+            found.append({
+                "title": title,
+                "store_name": store_name,
+                "store_url": store_url
+            })
+
+    # =====================================================
+    # 결과
+    # =====================================================
+
+    print()
+    print("===================================")
+    print("조건에 맞는 상품:", len(found))
+    print("===================================")
+
+    if not found:
+
+        print(
+            f"현재 '{STORE_NAME}'에서 "
+            f"'{KEYWORD}' 상품을 찾지 못했습니다."
         )
 
-        page = browser.new_page(
-            viewport={
-                "width": 1440,
-                "height": 1200
-            },
-            locale="ko-KR"
+        return
+
+    # =====================================================
+    # Telegram
+    # =====================================================
+
+    for product in found:
+
+        message = (
+            "📢 펩소덴트 상품 발견!\n\n"
+            f"스토어: {product['store_name']}\n"
+            f"상품명: {product['title']}\n\n"
+            f"스토어 URL:\n{product['store_url']}"
         )
 
         print()
-        print("🌐 네이버플러스 스토어 접속")
-        print(SEARCH_URL)
+        print("🎯 상품 발견!")
+        print("상품명:", product["title"])
+        print("스토어:", product["store_name"])
 
-        try:
+        send_telegram(message)
 
-            response = page.goto(
-                SEARCH_URL,
-                wait_until="domcontentloaded",
-                timeout=60000
-            )
 
-            print("페이지 HTTP 상태:",
-                  response.status if response else "없음")
-
-            # 검색 결과가 렌더링될 시간을 줌
-            page.wait_for_timeout(7000)
-
-            print("현재 URL:")
-            print(page.url)
-
-            print()
-            print("페이지 제목:")
-            print(page.title())
-
-            # 화면에 표시된 전체 텍스트
-            body_text = page.locator("body").inner_text()
-
-            print()
-            print("페이지 텍스트 길이:",
-                  len(body_text))
-
-            print()
-            print("----- 페이지 텍스트 앞부분 -----")
-            print(body_text[:8000])
-
-            # =================================================
-            # 핵심 검사
-            # =================================================
-
-            keyword_found = KEYWORD in body_text
-            store_found = STORE_NAME in body_text
-
-            print()
-            print("===================================")
-            print("펩소덴트 발견:", keyword_found)
-            print("공감 클릭 발견:", store_found)
-            print("===================================")
-
-            if keyword_found and store_found:
-
-                print()
-                print("🎯 공감 클릭 + 펩소덴트 발견!")
-
-                message = (
-                    "📢 펩소덴트 상품 발견!\n\n"
-                    f"스토어: {STORE_NAME}\n"
-                    f"검색어: {KEYWORD}\n\n"
-                    "네이버플러스 스토어 검색 결과에서 "
-                    "공감 클릭 상품이 확인되었습니다."
-                )
-
-                send_telegram(message)
-
-            else:
-
-                print()
-                print("현재 조건에 맞는 상품이 없습니다.")
-
-        except Exception as e:
-
-            print()
-            print("❌ 브라우저 실행 중 오류")
-            print(type(e).__name__)
-            print(str(e))
-
-        finally:
-
-            browser.close()
-
+# =========================================================
+# 실행
+# =========================================================
 
 if __name__ == "__main__":
     check()
