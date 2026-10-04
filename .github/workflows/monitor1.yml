@@ -1,14 +1,11 @@
-name: Monitor1
+name: Monitor
 
 on:
   schedule:
+    # 🔴 하루 한 번 실행
     - cron: "33 10 * * *"
 
   workflow_dispatch:
-
-# 🔴 seen_products.json을 GitHub에 저장하기 위해 필요
-permissions:
-  contents: write
 
 jobs:
 
@@ -31,30 +28,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium
+
       - name: Run monitor
         run: python monitor1.py
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-
-      - name: Save seen products
-        run: |
-
-          if [ -f seen_products.json ]; then
-
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-            git add seen_products.json
-
-            git diff --cached --quiet || git commit -m "Update seen products"
-
-            git push
-
-          else
-
-            echo "seen_products.json이 없습니다."
-
-          fi
