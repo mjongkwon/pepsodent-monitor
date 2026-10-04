@@ -1,16 +1,21 @@
+import requests
 import os
 import re
-import requests
-
-from playwright.sync_api import sync_playwright
 
 
 # =========================================================
 # 🔴 설정
 # =========================================================
 
-STORE_URL = "https://smartstore.naver.com/smart_how"
+# 모니터링할 SmartStore
+STORE_ID = "smart_how"
+
+# 찾을 상품명
 KEYWORD = "펩소덴트"
+
+# GitHub Secrets
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -46,175 +51,156 @@ def send_telegram(message):
 
 
 # =========================================================
-# SmartStore 확인
+# 네이버 웹문서 검색
 # =========================================================
 
-def check_store():
+def search_naver():
+
+    url = "https://openapi.naver.com/v1/search/webkr.json"
+
+    headers = {
+        "X-Naver-Client-Id": CLIENT_ID,
+        "X-Naver-Client-Secret": CLIENT_SECRET
+    }
+
+    # 🔴 핵심 검색어
+    #
+    # SmartStore의 특정 스토어 안에서
+    # 펩소덴트를 찾도록 검색
+    search_query = f"site:smartstore.naver.com/{STORE_ID} {KEYWORD}"
+
+    params = {
+        "query": search_query,
+        "display": 100,
+        "start": 1
+    }
+
+    print()
+    print("🌐 네이버 웹문서 검색 API")
+    print("검색어:", search_query)
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=30
+    )
+
+    print("네이버 HTTP 상태:", response.status_code)
+
+    if response.status_code != 200:
+
+        print("❌ 네이버 API 오류")
+        print(response.text)
+
+        return []
+
+    data = response.json()
+
+    items = data.get("items", [])
+
+    print("검색 결과:", len(items))
+
+    return items
+
+
+# =========================================================
+# 상품 검색
+# =========================================================
+
+def check():
 
     print()
     print("===================================")
     print("🔍 공감 클릭 SmartStore 모니터링")
-    print("스토어:", STORE_URL)
+    print("스토어 ID:", STORE_ID)
     print("검색어:", KEYWORD)
     print("===================================")
 
-    with sync_playwright() as p:
+    items = search_naver()
 
-        browser = p.chromium.launch(
-            headless=True
+    found_products = []
+
+    for item in items:
+
+        title = item.get("title", "")
+        link = item.get("link", "")
+        description = item.get("description", "")
+
+        # HTML 태그 제거
+        title = re.sub(r"<.*?>", "", title)
+        description = re.sub(r"<.*?>", "", description)
+
+        print()
+        print("----- 검색 결과 -----")
+        print("제목:", title)
+        print("URL:", link)
+        print("설명:", description)
+
+        # -------------------------------------------------
+        # SmartStore 주소인지 확인
+        # -------------------------------------------------
+
+        if f"smartstore.naver.com/{STORE_ID}" not in link:
+            continue
+
+        # -------------------------------------------------
+        # 펩소덴트가 제목 또는 설명에 있는지 확인
+        # -------------------------------------------------
+
+        text = f"{title} {description}"
+
+        if KEYWORD not in text:
+            continue
+
+        # -------------------------------------------------
+        # 상품 URL인지 확인
+        # -------------------------------------------------
+
+        if "/products/" not in link:
+            continue
+
+        found_products.append({
+            "title": title,
+            "url": link
+        })
+
+    # =====================================================
+    # 결과
+    # =====================================================
+
+    print()
+    print("===================================")
+    print("조건에 맞는 상품:", len(found_products))
+    print("===================================")
+
+    if not found_products:
+
+        print("현재 펩소덴트 상품이 검색되지 않았습니다.")
+        return
+
+    # =====================================================
+    # Telegram 알림
+    #
+    # 🔴 중복 검사 없음
+    # 🔴 저장 없음
+    # 🔴 매번 발견하면 알림
+    # =====================================================
+
+    for product in found_products:
+
+        message = (
+            "📢 펩소덴트 상품 발견!\n\n"
+            f"상품명: {product['title']}\n\n"
+            f"상품 URL:\n{product['url']}"
         )
 
-        context = browser.new_context(
-            locale="ko-KR",
-            viewport={
-                "width": 1440,
-                "height": 1000
-            },
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            )
-        )
-
-        page = context.new_page()
-
         print()
-        print("🌐 SmartStore 접속 중...")
+        print("📢 Telegram 알림:")
+        print(product["title"])
+        print(product["url"])
 
-        try:
-
-            response = page.goto(
-                STORE_URL,
-                wait_until="domcontentloaded",
-                timeout=60000
-            )
-
-            if response:
-                print("HTTP 상태:", response.status)
-
-            print("현재 URL:", page.url)
-            print("페이지 제목:", page.title())
-
-            # JavaScript로 상품 목록이 표시될 시간을 줌
-            page.wait_for_timeout(5000)
-
-        except Exception as e:
-
-            print("❌ SmartStore 접속 실패")
-            print(e)
-
-            browser.close()
-            return
-
-        # -------------------------------------------------
-        # 페이지 전체 텍스트 확인
-        # -------------------------------------------------
-
-        body_text = page.locator("body").inner_text()
-
-        print()
-        print("페이지 텍스트 길이:", len(body_text))
-
-        # -------------------------------------------------
-        # 🔴 펩소덴트가 페이지에 있는지 확인
-        # -------------------------------------------------
-
-        if KEYWORD not in body_text:
-
-            print()
-            print(f"❌ '{KEYWORD}'를 찾지 못했습니다.")
-
-            # 디버깅용 페이지 정보
-            print()
-            print("페이지 앞부분:")
-            print(body_text[:1000])
-
-            browser.close()
-            return
-
-        print()
-        print(f"🎯 '{KEYWORD}' 발견!")
-
-        # -------------------------------------------------
-        # 상품 링크 찾기
-        # -------------------------------------------------
-
-        links = page.locator("a").all()
-
-        found_products = []
-
-        for link in links:
-
-            try:
-
-                text = link.inner_text().strip()
-                href = link.get_attribute("href")
-
-                if not href:
-                    continue
-
-                if KEYWORD not in text:
-                    continue
-
-                # 상대 URL이면 SmartStore 주소 붙이기
-                if href.startswith("/"):
-                    href = "https://smartstore.naver.com" + href
-
-                found_products.append({
-                    "title": text,
-                    "url": href
-                })
-
-            except Exception:
-                continue
-
-        # -------------------------------------------------
-        # 결과
-        # -------------------------------------------------
-
-        print()
-        print("펩소덴트 관련 링크:", len(found_products))
-
-        # 중복 URL 제거
-        unique_products = {}
-
-        for product in found_products:
-
-            unique_products[product["url"]] = product["title"]
-
-        # -------------------------------------------------
-        # Telegram
-        # -------------------------------------------------
-
-        if unique_products:
-
-            for url, title in unique_products.items():
-
-                message = (
-                    "📢 펩소덴트 상품 발견!\n\n"
-                    f"상품명: {title}\n\n"
-                    f"상품 URL:\n{url}"
-                )
-
-                send_telegram(message)
-
-        else:
-
-            # 페이지에는 펩소덴트가 있지만 링크를 찾지 못한 경우
-            print()
-            print("⚠️ 펩소덴트 문구는 발견했지만 상품 링크를 찾지 못했습니다.")
-
-            message = (
-                "⚠️ 펩소덴트 발견\n\n"
-                "공감 클릭 SmartStore 페이지에서 "
-                "펩소덴트 문구는 발견했지만 상품 URL을 추출하지 못했습니다.\n\n"
-                f"{STORE_URL}"
-            )
-
-            send_telegram(message)
-
-        browser.close()
+        send_telegram(message)
 
 
 # =========================================================
@@ -222,4 +208,4 @@ def check_store():
 # =========================================================
 
 if __name__ == "__main__":
-    check_store()
+    check()
