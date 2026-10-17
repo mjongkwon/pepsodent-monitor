@@ -3,9 +3,9 @@ name: Monitor1
 on:
   schedule:
     # 🔴 하루 한 번 실행
-    - cron: "33 10 * * *"
-#    - cron: "33 19 * * *"
-#      timezone: Asia/Seoul
+#    - cron: "33 10 * * *"
+    - cron: "33 19 * * *"
+      timezone: Asia/Seoul
 
   workflow_dispatch:
 
