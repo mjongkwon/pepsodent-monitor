@@ -4,6 +4,7 @@ on:
   schedule:
     # 🔴 하루 한 번 실행
 #    - cron: "33 10 * * *"
+#    - cron: "33 2 * * *"
     - cron: "33 19 * * *"
       timezone: Asia/Seoul
 
